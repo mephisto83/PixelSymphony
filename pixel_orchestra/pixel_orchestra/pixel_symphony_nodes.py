@@ -8,6 +8,7 @@ import inspect
 import json
 import nodeitems_utils
 from nodeitems_utils import NodeCategory, NodeItem
+from .pixel_collection import PIXEL_COLLECTION
 from .pixel_stored_functions import functions_dict
 
 PIX_PREFIX = "pix_"
@@ -107,7 +108,7 @@ def find_unique_pix_properties():
         # Go through all collections
         for collection in bpy.data.collections:
             # Check if the collection has the custom PIX_ID
-            if PIX_ID in collection.keys():
+            if PIXEL_COLLECTION in collection.keys():
                 # Go through each object in the collection
                 for obj in collection.objects:
                     # Check if the object has the pix_properties custom property
@@ -133,7 +134,9 @@ def find_unique_pix_properties():
 def get_pix_properties_items(self, context):
     pix_props = find_unique_pix_properties()
     if pix_props == None:
+        print("no pix props found")
         return [(0, '', '')]
+    print(f"pix_props : {len(pix_props)}")
     return [(i, i, i) for i in pix_props]
 
 class PixelNodeMath(Node, PixelBaseNode):

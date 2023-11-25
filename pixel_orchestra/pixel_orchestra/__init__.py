@@ -14,7 +14,7 @@ bl_info = {
 import sys
 import importlib
 
-modules = ['pixel_symphony', 'pixel_custom_properties', 'pixel_custom_object_properties', 'pixel_symphony_nodes']
+modules = ['pixel_symphony', 'pixel_custom_properties', 'pixel_custom_object_properties', 'pixel_symphony_nodes', 'pixel_rendering', 'pixel_utils', 'pixel_collection']
 
 for mod in modules:
     if f"{__package__}.{mod}" in sys.modules:

@@ -3,8 +3,11 @@ import bpy
 import uuid
 import json
 import mathutils
+import bmesh
 import random
 from mathutils import Vector
+from .pixel_rendering import frames_to_generate
+from .pixel_utils import distribute_collection_to_face, get_mesh_data, get_meshes_in_collection
 from .pixel_stored_functions import functions_dict
 from bpy.props import CollectionProperty, StringProperty
 
@@ -69,6 +72,7 @@ def create_object_driver(mesh, object, property_name, axis, expression, variable
 
     print(f"Driver created on property '{property_name}' in mesh '{mesh.name}'.")
     return driver
+
 
 
 def read_prefixed_properties(node, prefix):
@@ -538,7 +542,7 @@ def find_pixel_symphony_node_trees(self, context):
 
     :return: A list of node trees that are of type 'PixelTreeType'.
     """
-    pixel_symphony_tree_names = []
+    pixel_symphony_tree_names = [('','','')]
 
     # Iterate through all node trees in the current Blender file
     for node_tree in bpy.data.node_groups:
@@ -556,6 +560,16 @@ def get_pixel_symphony_node_trees(name):
             return node_tree
 
     return None
+
+def get_pixel_symphony_trees():
+    res = []
+    # Iterate through all node trees in the current Blender file
+    for node_tree in bpy.data.node_groups:
+        # Check if the node tree is of type 'PixelTreeType'
+        if node_tree.bl_idname == 'PixelTreeType':
+            res.append(node_tree)
+
+    return res
 
 def get_pixelnode_math_nodes(node_tree):
     """
@@ -749,9 +763,10 @@ class ApplyMusicOperator(bpy.types.Operator):
         scene = context.scene
         track_count , unique_notes_per_track, unique_notes_for_track = analyze_tracks(json_data=json_data)
         self.report({'INFO'}, "Apply Music")
-        symphony_tree = get_pixel_symphony_node_trees(context.scene.symphonytrees)
-        if symphony_tree != None:
-            pixel_math_nodes = get_pixelnode_math_nodes(symphony_tree)
+        symphony_trees = get_pixel_symphony_trees()
+        for i in range(len(symphony_trees)):
+            defauly_symphony_tree = symphony_trees[i]
+            pixel_math_nodes = get_pixelnode_math_nodes(defauly_symphony_tree)
             for i in range(len(pixel_math_nodes)):
                 pixel_math_node = pixel_math_nodes[i]
                 print(pixel_math_node)
@@ -805,7 +820,6 @@ class ApplyMusicOperator(bpy.types.Operator):
                                                     if track_note_collection != None:
                                                         print(f"track {i}")
                                                         print(f"note {j}")
-                                                        args = {}
                                                         print("track note  collection found")
                                                         print(functions_dict[selected_function])
                                                         print(input_sockets)
@@ -906,6 +920,23 @@ def convert_to_float(value):
     except ValueError:
         # Handle the case where conversion is not possible
         raise ValueError(f"Cannot convert {value} to float")
+def find_asset_collections():
+    """
+    Finds all collections marked as assets.
+
+    Returns:
+    list: A list of names of collections that are marked as assets.
+    """
+    asset_collections = []
+
+    # Iterate through all collections in the blend file
+    for collection in bpy.data.collections:
+        # Check if the collection is marked as an asset
+        if collection.asset_data is not None:
+            asset_collections.append(collection.name)
+
+    return asset_collections
+
 def find_pix_properties(collection, property_name):
     unique_properties = []
     try:
@@ -952,33 +983,43 @@ class RealizeCollectionOperator(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        scene = context.scene
         collection_name = context.scene.my_collection_enum
+        track_sections = scene.music_data_props.track_sections
+        collection_names = set()
+        if collection_name:
+            collection_names.add(collection_name)
+        for i in range(len(track_sections)):
+            track_section = track_sections[i]
+            if track_section.track_object_collection:
+                collection_names.add(track_section.track_object_collection)
         parent_collection = bpy.data.collections.get(context.scene.target_collection_enum)
-        target_collection = bpy.data.collections.get(collection_name)
-        if not PIX_ID in target_collection:
-            target_collection[PIX_ID] = generate_unique_id()
-        else:
-            to_delete = find_collections_with_property(PIX_ID_DUPS, target_collection[PIX_ID])
-            for i in range(len(to_delete)):
-                inst = to_delete[i]
-                delete_collection_and_hierarchy(inst.name)
-        instances = find_collection_instances(collection_name)
-        for i in range(len(instances)):
-            insta = instances[i]
-            new_collection = duplicate_collection_instance(insta, parent_collection)
-            new_collection[PIX_ID_DUPS] = target_collection[PIX_ID]
-            new_collection['track'] = insta['track']
-            new_collection['note'] = insta['note']
-            empty = parent_to_empty(new_collection)
-            empty.location = insta.location
-            empty.rotation_euler = insta.rotation_euler
-            empty.scale = insta.scale
-            delete_collection_instance(insta.name)
-            duplicate_customized_materials_in_collection(new_collection.name)
-            iterate_collection(new_collection,
-                               object_func=realize_objects,
-                               material_func=lambda mat, obj: print(f"Material: {mat.name}, Object: {obj.name}"),
-                               node_func=realize_nodes)
+        for collection_name in collection_names:
+            target_collection = bpy.data.collections.get(collection_name)
+            if not PIX_ID in target_collection:
+                target_collection[PIX_ID] = generate_unique_id()
+            else:
+                to_delete = find_collections_with_property(PIX_ID_DUPS, target_collection[PIX_ID])
+                for i in range(len(to_delete)):
+                    inst = to_delete[i]
+                    delete_collection_and_hierarchy(inst.name)
+            instances = find_collection_instances(collection_name)
+            for i in range(len(instances)):
+                insta = instances[i]
+                new_collection = duplicate_collection_instance(insta, parent_collection)
+                new_collection[PIX_ID_DUPS] = target_collection[PIX_ID]
+                new_collection['track'] = insta['track']
+                new_collection['note'] = insta['note']
+                empty = parent_to_empty(new_collection)
+                empty.location = insta.location
+                empty.rotation_euler = insta.rotation_euler
+                empty.scale = insta.scale
+                delete_collection_instance(insta.name)
+                duplicate_customized_materials_in_collection(new_collection.name)
+                iterate_collection(new_collection,
+                                object_func=realize_objects,
+                                material_func=lambda mat, obj: print(f"Material: {mat.name}, Object: {obj.name}"),
+                                node_func=realize_nodes)
         return {'FINISHED'}
 def parent_to_empty(collection):
     if not collection:
@@ -1115,6 +1156,20 @@ def distribute_collection_on_plane(instance, plane_obj, x_min, x_max, y_min, y_m
     # Parent the instance to the plane
     instance.parent = None
 
+class CalculateRequiredFramesOperator(bpy.types.Operator):
+    bl_idname = "scene.calculate_required_frames"
+    bl_label = "Calculate Require Frames"
+
+    @classmethod
+    def poll(cls, context):
+        return 'json_data' in context.scene
+
+    def execute(self, context):
+        print("calculating")
+        frames_needed = frames_to_generate()
+        self.report({'INFO'}, f"Required frames to print {len(frames_needed)}")
+        return {'FINISHED'}
+
 class DistributeInstancesOperator(bpy.types.Operator):
     bl_idname = "scene.distribut_instances"
     bl_label = "Distribute instances"
@@ -1126,6 +1181,7 @@ class DistributeInstancesOperator(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         # Check if music data is available
+        placement_offsets = {}
         if  'music_data' in scene and 'tracks' in scene['music_data']:
             tracks = list(scene['music_data']['tracks'])
             for index, track in enumerate(tracks):
@@ -1133,7 +1189,6 @@ class DistributeInstancesOperator(bpy.types.Operator):
                 track_section = get_track_section(scene, index)
                 if track_section != None and track_section.enabled:
                     # Dropdown for plane selection
-                    track_plane_prop = f"track-planes-{index}"
                     if track_section.enabled:
                         mesh_name = track_section.track_plane
                         if mesh_name != None and mesh_name in bpy.data.objects:
@@ -1154,6 +1209,36 @@ class DistributeInstancesOperator(bpy.types.Operator):
                                         distribute_collection_on_plane(matching_instance, plan_mesh, minx, maxx, miny, maxy)
                                 else:
                                     print(f"cant find {prop_name}")
+                        elif mesh_name != None and mesh_name in bpy.data.collections:
+                            collection = bpy.data.collections[mesh_name]
+                            print("collection ")
+                            print(collection)
+                            objs = get_meshes_in_collection(collection.name)
+                            all_mesh_data = []
+                            for i in range(len(objs)):
+                                obj = objs[i]
+                                mesh_data = get_mesh_data(obj)
+                                all_mesh_data.extend(mesh_data)
+                            if  collection.name in placement_offsets:
+                                c = placement_offsets[collection.name] 
+                            else:
+                                placement_offsets[collection.name] = 0
+                                c = 0
+                            instances = [obj for obj in bpy.data.objects if obj.instance_type == 'COLLECTION']  # List of collection instances
+                            for note in track['notes']:
+                                prop_name = f"cb_{note}_{index}"
+                                track_note = get_track_note(scene, index, note)
+                                if  track_note.enabled or track_note == None:
+                                    properties = { "note": note, "track": index }  # Dictionary of properties to match
+                                    mesh_dat = all_mesh_data[c % len(all_mesh_data)]
+                                    matching_instance = find_instance_with_properties(instances, properties)
+                                    if matching_instance != None:
+                                        distribute_collection_to_face(matching_instance, mesh_dat)
+                                        c = c + 1
+                                        placement_offsets[collection.name] = c
+                                else:
+                                    print(f"cant find {prop_name}")
+                            
                             
         self.report({'INFO'}, "Distributed instances")
         return {'FINISHED'}
@@ -1207,7 +1292,11 @@ class ProcessJSONFileOperator(bpy.types.Operator):
                     matching_instance = find_instance_with_properties(instances, {"track": i, "note": unique_notes_for_track[i][j]})
                     if matching_instance == None:
                         parent_collection = bpy.data.collections.get(context.scene.target_collection_enum)
-                        insta = create_collection_instance(collection_name, parent_collection)
+                        track_section = get_track_section(scene, track_index=index)
+                        if track_section != None and track_section.track_object_collection:
+                            insta = create_collection_instance(track_section.track_object_collection, parent_collection)
+                        else:
+                            insta = create_collection_instance(collection_name, parent_collection)
                         insta["track"] = i
                         insta["note"] = unique_notes_for_track[i][j]
                     else:
@@ -1235,6 +1324,8 @@ class TrackNoteItem(bpy.types.PropertyGroup):
 class TrackSectionItem(bpy.types.PropertyGroup):
     track_id: bpy.props.IntProperty()
     track_plane: bpy.props.StringProperty()
+    track_object_collection: bpy.props.StringProperty()
+    track_symphony_tree: bpy.props.EnumProperty(items=find_pixel_symphony_node_trees)
     min_x: bpy.props.FloatProperty(name=f"Min X")
     min_y: bpy.props.FloatProperty(name="Min y")
     max_x: bpy.props.FloatProperty(name="Max x")
@@ -1325,7 +1416,9 @@ class PixelSymphonyPanel(bpy.types.Panel):
                     box = layout.box()
                     box.prop(track_section, 'enabled', text=track['name'])
                     box.prop(track_section, 'show', text="Show")
-                    box.prop_search(track_section, 'track_plane', bpy.data, "objects")
+                    box.prop_search(track_section, 'track_plane', bpy.data, "collections")
+                    box.prop_search(track_section, 'track_object_collection', bpy.data, "collections")
+                    box.prop(track_section, "track_symphony_tree")
                     if show_track_section(scene, index):
                         # Dropdown for plane selection
                         for prop_name_boundary in [
@@ -1359,6 +1452,7 @@ class PixelSymphonyPanel(bpy.types.Panel):
             layout.operator("object.realize_collection")
             layout.prop(context.scene, "symphonytrees")
             layout.operator("object.apply_music_to_collections")
+            layout.operator("scene.calculate_required_frames")
         self.draw_music_panel(context)
 
 def register():
@@ -1368,6 +1462,7 @@ def register():
     bpy.utils.register_class(ReadJSONFileOperator)
     bpy.utils.register_class(ProcessJSONFileOperator)
     bpy.utils.register_class(DistributeInstancesOperator)
+    bpy.utils.register_class(CalculateRequiredFramesOperator)
     bpy.utils.register_class(TrackSectionItem)
     bpy.utils.register_class(TrackNoteItem)
     bpy.utils.register_class(MusicDataProperties)
@@ -1389,6 +1484,7 @@ def unregister():
     bpy.utils.unregister_class(ReadJSONFileOperator)
     bpy.utils.unregister_class(ProcessJSONFileOperator)
     bpy.utils.unregister_class(DistributeInstancesOperator)
+    bpy.utils.unregister_class(CalculateRequiredFramesOperator)
     bpy.utils.unregister_class(PixelSymphonyPanel)
     del bpy.types.Scene.music_data_props
     bpy.utils.unregister_class(MusicDataProperties)

@@ -1,6 +1,7 @@
 
 
 import bpy
+from .pixel_utils import get_pix_properties_items
 
 class PIX_CUSTOM_OBJECT_PROPS_OT_add_edit(bpy.types.Operator):
     """Add or Edit a Pix Custom Object Property"""
@@ -124,7 +125,7 @@ def draw_pix_custom_props_panel(self, context):
         layout.separator()
         layout.label(text="Add/Edit Property:")
         layout.prop(wm, "pix_new_object_prop_name")
-        layout.prop(wm, "pix_new_object_prop_value")
+        # layout.prop(wm, "pix_new_object_prop_value")
         layout.operator("object.pix_add_edit_custom_object_prop", text="Add/Edit")
         layout.operator("object.pix_batch_add_edit_custom_object_prop", text=f"Auto {wm.pix_new_object_prop_name}")
 
@@ -134,7 +135,12 @@ def register():
     bpy.utils.register_class(PIX_CUSTOM_PROPS_OT_delete)
     bpy.utils.register_class(PIX_CUSTOM_PROPS_OT_select)
     bpy.types.OBJECT_PT_custom_props.append(draw_pix_custom_props_panel)
-    bpy.types.WindowManager.pix_new_object_prop_name = bpy.props.StringProperty(name="Pix Prop Name")
+    bpy.types.WindowManager.pix_new_object_prop_name = bpy.props.EnumProperty(
+        name="Pix Properties",
+        description="Choose custom property",
+        items=get_pix_properties_items,
+        default=0
+    )
     bpy.types.WindowManager.pix_new_object_prop_value = bpy.props.StringProperty(name="Pix Prop Value")
 
 def unregister():
