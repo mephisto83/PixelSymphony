@@ -27,6 +27,36 @@ def get_meshes_in_collection(collection_name):
     return meshes
 
 
+def pin_collection_to_face(instance, mesh_data):
+    # Random location within the specified range
+    # x = random.uniform(x_min, x_max)
+    # y = random.uniform(y_min, y_max)
+    # z = 0  # Assuming you want to place them on the plane
+    # Check if plane_obj is the correct type
+    # if not isinstance(plane_obj, bpy.types.Object):
+    #     print(f"Provided plane is not an object: {plane_obj}")
+    #     return
+    print(instance)
+    print(mesh_data)
+    # {
+    #     'face': None,
+    #     'normal': None,
+    #     'world_position': None,
+    #     'rotation_euler': None
+    # }
+    # Apply the plane's rotation to the instance
+    # instance.rotation_euler = mesh_data["rotation_euler"]
+
+    # Set the instance's location relative to the plane
+    # instance.location = mesh_data['world_position'] 
+
+    # Link the instance to the same collection as the plane
+    # plane_collection = plane_obj.users_collection[0] if plane_obj.users_collection else bpy.context.collection
+    # plane_collection.objects.link(instance)
+    instance.location = Vector((0,0,0))
+    # Parent the instance to the plane
+    instance.parent = mesh_data
+
 def distribute_collection_to_face(instance, mesh_data):
     # Random location within the specified range
     # x = random.uniform(x_min, x_max)

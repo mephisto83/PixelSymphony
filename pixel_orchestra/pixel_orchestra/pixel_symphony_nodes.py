@@ -136,7 +136,6 @@ def get_pix_properties_items(self, context):
     if pix_props == None:
         print("no pix props found")
         return [(0, '', '')]
-    print(f"pix_props : {len(pix_props)}")
     return [(i, i, i) for i in pix_props]
 
 class PixelNodeMath(Node, PixelBaseNode):
@@ -222,6 +221,7 @@ class PixelNodeJSONData(bpy.types.Node, PixelBaseNode):
     bl_label = 'JSON Data'
     bl_idname = 'PixelNodeJSONData'
     path_data: bpy.props.StringProperty(name='')
+    stored_data: bpy.props.StringProperty(name='')
 
     def init(self, context):
         self.inputs.new('PixelCustomSocket', 'Data')
@@ -234,12 +234,17 @@ class PixelNodeJSONData(bpy.types.Node, PixelBaseNode):
 
         try:
             print("update_sockets_from_json")
+
             self.path_data = json_path_data
+            if not json_data:
+                json_data = self.stored_data
             if isinstance(json_data, str):
                 print("deserialize json")
                 data = json.loads(json_data)
+                self.stored_data = json_data
             else:
                 print("already json")
+                self.stored_data = json.dump(json_data)
                 data = json_data
             
             print("required_sockets")

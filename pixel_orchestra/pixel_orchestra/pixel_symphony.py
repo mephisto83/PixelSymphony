@@ -7,7 +7,7 @@ import bmesh
 import random
 from mathutils import Vector
 from .pixel_rendering import frames_to_generate
-from .pixel_utils import distribute_collection_to_face, get_mesh_data, get_meshes_in_collection
+from .pixel_utils import distribute_collection_to_face, get_mesh_data, get_meshes_in_collection, pin_collection_to_face
 from .pixel_stored_functions import functions_dict
 from bpy.props import CollectionProperty, StringProperty
 
@@ -740,10 +740,11 @@ def extract_data(json_data, path):
             current_data = new_results
         else:
             # Collect data based on the key
-            if isinstance(current_data, dict):
+            if isinstance(current_data, (list, dict)):
                 current_data = current_data.get(part)
             else:
                 print(current_data)
+                print(type(current_data))
                 print(f"part => {part}")
                 print(f"path => {path}")
                 raise BaseException(f"that shouldnt happen i think, {part}")
@@ -761,7 +762,7 @@ class ApplyMusicOperator(bpy.types.Operator):
         raw_json_data = context.scene['raw_json_data']
         raw_json_data = json.loads(raw_json_data)
         scene = context.scene
-        track_count , unique_notes_per_track, unique_notes_for_track = analyze_tracks(json_data=json_data)
+        track_count , unique_notes_per_track, unique_notes_for_track = analyze_tracks(json_data=raw_json_data)
         self.report({'INFO'}, "Apply Music")
         symphony_trees = get_pixel_symphony_trees()
         for i in range(len(symphony_trees)):
@@ -799,6 +800,9 @@ class ApplyMusicOperator(bpy.types.Operator):
                                             if track_section.enabled:
                                                 track = tracks[i]
                                                 note_path = f"{remove_prefix(note_socket.json_path_data, track_socket.json_path_data)}"
+                                                print (f"note_socket.json_path_data => {note_socket.json_path_data}")
+                                                print (f"track_socket.json_path_data => {track_socket.json_path_data}")
+                                                print (f"note_path => {note_path}")
                                                 notes = extract_data(track, note_path)
                                                 for j in range(len(notes)):
                                                     data = {
@@ -1006,14 +1010,19 @@ class RealizeCollectionOperator(bpy.types.Operator):
             instances = find_collection_instances(collection_name)
             for i in range(len(instances)):
                 insta = instances[i]
+                insta_parent = insta.parent
                 new_collection = duplicate_collection_instance(insta, parent_collection)
                 new_collection[PIX_ID_DUPS] = target_collection[PIX_ID]
                 new_collection['track'] = insta['track']
                 new_collection['note'] = insta['note']
+
                 empty = parent_to_empty(new_collection)
-                empty.location = insta.location
-                empty.rotation_euler = insta.rotation_euler
-                empty.scale = insta.scale
+                if insta_parent:
+                    empty.parent = insta_parent
+                else:
+                    empty.location = insta.location
+                    empty.rotation_euler = insta.rotation_euler
+                    empty.scale = insta.scale
                 delete_collection_instance(insta.name)
                 duplicate_customized_materials_in_collection(new_collection.name)
                 iterate_collection(new_collection,
@@ -1119,13 +1128,53 @@ def find_instance_with_properties(instances, properties):
         return matching_instances[0]
     return None
 
+def fetch_tracks(raw_json_data):
+    symphony_trees = get_pixel_symphony_trees()
+    for i in range(len(symphony_trees)):
+        defauly_symphony_tree = symphony_trees[i]
+        pixel_math_nodes = get_pixelnode_math_nodes(defauly_symphony_tree)
+        for i in range(len(pixel_math_nodes)):
+            pixel_math_node = pixel_math_nodes[i]
+            track_socket = get_connected_socket(pixel_math_node, 'Track')
+            tracks = extract_data(raw_json_data, track_socket.json_path_data)
+            return tracks
+    return None
+
+def fetch_notes(track):
+    symphony_trees = get_pixel_symphony_trees()
+    for i in range(len(symphony_trees)):
+        defauly_symphony_tree = symphony_trees[i]
+        pixel_math_nodes = get_pixelnode_math_nodes(defauly_symphony_tree)
+        for i in range(len(pixel_math_nodes)):
+            pixel_math_node = pixel_math_nodes[i]
+            track_socket = get_connected_socket(pixel_math_node, 'Track')
+            note_socket = get_connected_socket(pixel_math_node, 'Note')
+            print(track)
+            print(f"note_socket.json_path_data = {note_socket.json_path_data}")
+            print(f"track_socket.json_path_data = {track_socket.json_path_data}")
+            t = f"{track_socket.json_path_data}"
+            note_path = f"{remove_prefix(note_socket.json_path_data, t)}"
+            notes = extract_data(track, note_path)
+            return notes
+    return None
+def get_track_name(raw_json_data, i):
+    symphony_trees = get_pixel_symphony_trees()
+    for i in range(len(symphony_trees)):
+        defauly_symphony_tree = symphony_trees[i]
+        pixel_math_nodes = get_pixelnode_math_nodes(defauly_symphony_tree)
+        for i in range(len(pixel_math_nodes)):
+            pixel_math_node = pixel_math_nodes[i]
+            track_socket = get_connected_socket(pixel_math_node, 'Track')
+            tracks = extract_data(raw_json_data, track_socket.json_path_data)
+            return tracks[i]["name"]
+    return ""
 def analyze_tracks(json_data):
-    track_count = len(json_data)
+    tracks = fetch_tracks(json_data)
+    track_count = len(tracks)
     unique_notes_per_track = []
     unique_notes_for_track = []
-
-    for track in json_data:
-        notes = track.get("notes", [])
+    for track in tracks:
+        notes = fetch_notes(track)
         unique_notes = {note["midi"] for note in notes}  # Using a set for unique values
         unique_notes_per_track.append(len(unique_notes))
         unique_notes_for_track.append(list(unique_notes))
@@ -1215,10 +1264,12 @@ class DistributeInstancesOperator(bpy.types.Operator):
                             print(collection)
                             objs = get_meshes_in_collection(collection.name)
                             all_mesh_data = []
+                            all_obj_data = []
                             for i in range(len(objs)):
                                 obj = objs[i]
                                 mesh_data = get_mesh_data(obj)
                                 all_mesh_data.extend(mesh_data)
+                                all_obj_data.append(obj)
                             if  collection.name in placement_offsets:
                                 c = placement_offsets[collection.name] 
                             else:
@@ -1231,9 +1282,10 @@ class DistributeInstancesOperator(bpy.types.Operator):
                                 if  track_note.enabled or track_note == None:
                                     properties = { "note": note, "track": index }  # Dictionary of properties to match
                                     mesh_dat = all_mesh_data[c % len(all_mesh_data)]
+                                    obj_dat = all_obj_data[c % len(all_obj_data)]
                                     matching_instance = find_instance_with_properties(instances, properties)
                                     if matching_instance != None:
-                                        distribute_collection_to_face(matching_instance, mesh_dat)
+                                        pin_collection_to_face(matching_instance, obj_dat)
                                         c = c + 1
                                         placement_offsets[collection.name] = c
                                 else:
@@ -1265,10 +1317,11 @@ class ProcessJSONFileOperator(bpy.types.Operator):
 
     def execute(self, context):
         json_data = context.scene['json_data']
+        raw_json_data = context.scene['raw_json_data']
         scene = context.scene
         # Process the json_data here
         # ...
-        track_count , unique_notes_per_track, unique_notes_for_track = analyze_tracks(json_data=json_data)
+        track_count , unique_notes_per_track, unique_notes_for_track = analyze_tracks(json_data=json.loads(raw_json_data))
         print("Number of tracks:", track_count)
         print("Unique MIDI notes per track:", unique_notes_per_track)
         music_data = {
@@ -1276,8 +1329,9 @@ class ProcessJSONFileOperator(bpy.types.Operator):
         }
 
         for i in range(track_count):
+            track_name = get_track_name(json.loads(raw_json_data), i)
             temp = {
-                'name': json_data[i].get('name') + f" {i+1}",
+                'name': track_name + f" {i+1}",
                 'notes': unique_notes_for_track[i]
             }
             music_data["tracks"].append(temp)
