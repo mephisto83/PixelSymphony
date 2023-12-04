@@ -1205,6 +1205,7 @@ def distribute_collection_on_plane(instance, plane_obj, x_min, x_max, y_min, y_m
     # Parent the instance to the plane
     instance.parent = None
 
+
 class CalculateRequiredFramesOperator(bpy.types.Operator):
     bl_idname = "scene.calculate_required_frames"
     bl_label = "Calculate Require Frames"
@@ -1285,7 +1286,10 @@ class DistributeInstancesOperator(bpy.types.Operator):
                                     obj_dat = all_obj_data[c % len(all_obj_data)]
                                     matching_instance = find_instance_with_properties(instances, properties)
                                     if matching_instance != None:
-                                        pin_collection_to_face(matching_instance, obj_dat)
+                                        if should_pin_to_Face(scene, track_index=index):
+                                            pin_collection_to_face(matching_instance, obj_dat)
+                                        else: 
+                                            distribute_collection_to_face(matching_instance, mesh_data=mesh_dat)
                                         c = c + 1
                                         placement_offsets[collection.name] = c
                                 else:
@@ -1385,6 +1389,7 @@ class TrackSectionItem(bpy.types.PropertyGroup):
     max_x: bpy.props.FloatProperty(name="Max x")
     max_y: bpy.props.FloatProperty(name="Max y")
     show: bpy.props.BoolProperty(name="Show")
+    pin_to_face: bpy.props.BoolProperty(name="Pin to Face")
     enabled: bpy.props.BoolProperty(name="Enabled")
 
 def show_track_section(scene, track_index):
@@ -1392,6 +1397,11 @@ def show_track_section(scene, track_index):
     if track_section != None:
         if track_section.enabled:
             return track_section.show
+    return False
+def should_pin_to_Face(scene, track_index):
+    track_section = get_track_section(scene, track_index=track_index)
+    if track_section != None:
+        return track_section.pin_to_face
     return False
 def is_track_section_enabled(scene, track_index):
     track_section = get_track_section(scene, track_index=track_index)
@@ -1438,6 +1448,7 @@ def add_track_section_to_properties(scene, track_index, min_x, min_y, max_x, max
         track_section_item.max_x = max_x
         track_section_item.max_y = max_y
         track_section_item.show = show
+        track_section_item.pin_to_face = False
         track_section_item.enabled = enabled
 class MusicDataProperties(bpy.types.PropertyGroup):
     # This class will hold all the dynamic properties
@@ -1470,6 +1481,7 @@ class PixelSymphonyPanel(bpy.types.Panel):
                     box = layout.box()
                     box.prop(track_section, 'enabled', text=track['name'])
                     box.prop(track_section, 'show', text="Show")
+                    box.prop(track_section, 'pin_to_face', text="Pin to face")
                     box.prop_search(track_section, 'track_plane', bpy.data, "collections")
                     box.prop_search(track_section, 'track_object_collection', bpy.data, "collections")
                     box.prop(track_section, "track_symphony_tree")
