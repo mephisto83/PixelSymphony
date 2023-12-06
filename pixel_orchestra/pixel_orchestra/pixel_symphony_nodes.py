@@ -117,15 +117,19 @@ def find_unique_pix_properties():
                         unique_properties.update(properties)
 
                     # Go through each material of the object
-                    for mat in obj.data.materials:
-                        if mat is not None and mat.node_tree is not None:
-                            # Go through each node in the material
-                            for node in mat.node_tree.nodes:
-                                # Check if the node has the pix_properties custom property
-                                if "pix_properties" in node.keys():
-                                    properties = node["pix_properties"].split(',')
-                                    unique_properties.update(properties)
-    except:
+                    try:
+                        for mat in obj.data.materials:
+                            if mat is not None and mat.node_tree is not None:
+                                # Go through each node in the material
+                                for node in mat.node_tree.nodes:
+                                    # Check if the node has the pix_properties custom property
+                                    if "pix_properties" in node.keys():
+                                        properties = node["pix_properties"].split(',')
+                                        unique_properties.update(properties)
+                    except Exception as e:
+                        pass
+    except Exception as e:
+        print("Exception occurred:", e)
         return None
 
     # Return a set of unique pix_properties
@@ -135,7 +139,7 @@ def get_pix_properties_items(self, context):
     pix_props = find_unique_pix_properties()
     if pix_props == None:
         print("no pix props found")
-        return [(0, '', '')]
+        return [("Nothing", 'Nothing', 'Nothing')]
     return [(i, i, i) for i in pix_props]
 
 class PixelNodeMath(Node, PixelBaseNode):
