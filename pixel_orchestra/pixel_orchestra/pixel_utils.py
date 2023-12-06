@@ -1,7 +1,7 @@
 import bpy
 import bmesh  # Importing the bmesh module
 import random
-from mathutils import Vector
+from mathutils import Vector, Quaternion
 import mathutils
 
 def get_pix_properties_items(self, context):
@@ -26,8 +26,46 @@ def get_meshes_in_collection(collection_name):
     meshes = [obj for obj in collection.objects if obj.type == 'MESH']
     return meshes
 
+def pin_collection_to_face(instance, object_data):
+    # Ensure object_data is a mesh object
+    if not isinstance(object_data.data, bpy.types.Mesh):
+        print("object_data is not a Mesh object.")
+        return
 
-def pin_collection_to_face(instance, mesh_data):
+    # Ensure object_data's mesh has faces
+    if len(object_data.data.polygons) == 0:
+        print("No faces in the mesh.")
+        return
+
+    # Select a random face
+    face = random.choice(object_data.data.polygons)
+
+    # Calculate the normal of the face in local space
+    normal_local = face.normal
+
+    # Calculate the face center in local space
+    face_center_local = sum((object_data.data.vertices[v].co for v in face.vertices), Vector()) / len(face.vertices)
+
+    # Set the location of the instance to the face center (relative to the parent)
+    instance.location = face_center_local
+
+    # Align instance's vertical axis (0,0,1) with the face normal
+    z_axis = Vector((0, 0, 1))
+    rotation_quaternion = z_axis.rotation_difference(normal_local)
+    instance.rotation_mode = 'QUATERNION'
+    instance.rotation_quaternion = rotation_quaternion
+
+    # Parent the instance to the object
+    instance.parent = object_data
+
+    # Update the scene (if needed)
+    bpy.context.view_layer.update()
+
+    print("Instance placed at: ", instance.location)
+    print("Instance rotation: ", instance.rotation_quaternion)
+
+
+def pin_collection_to_face2(instance, mesh_data):
     # Random location within the specified range
     # x = random.uniform(x_min, x_max)
     # y = random.uniform(y_min, y_max)
