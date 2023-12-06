@@ -434,16 +434,7 @@ def duplicate_collection_instance(source_instance, parent_collection=None):
         if obj.parent in old_to_new_objs:
             new_obj.parent = old_to_new_objs[obj.parent]
 
-    # Copy location, scale, and rotation from the source instance
-    # new_collection.location = source_instance.location
-    # new_collection.scale = source_instance.scale
-    # new_collection.rotation_euler = source_instance.rotation_euler
-    move_top_objects_in_collection(new_collection.name, source_instance.location)
-    # Create a new instance for the duplicated collection
-    # new_instance = bpy.data.objects.new(name=f"{source_instance.name}_Duplicate", object_data=None)
-    # new_instance.instance_type = 'COLLECTION'
-    # new_instance.instance_collection = new_collection
-    # bpy.context.scene.collection.objects.link(new_instance)
+    # move_top_objects_in_collection(new_collection.name, source_instance.location)
 
     return new_collection
 def duplicate_collection_as_individual_objects(collection_instance):
@@ -1019,10 +1010,10 @@ class RealizeCollectionOperator(bpy.types.Operator):
                 empty = parent_to_empty(new_collection)
                 if insta_parent:
                     empty.parent = insta_parent
-                else:
-                    empty.location = insta.location
-                    empty.rotation_euler = insta.rotation_euler
-                    empty.scale = insta.scale
+                empty.location = insta.location
+                empty.rotation_mode = 'QUATERNION'
+                empty.rotation_quaternion = insta.rotation_quaternion
+                empty.scale = insta.scale
                 delete_collection_instance(insta.name)
                 duplicate_customized_materials_in_collection(new_collection.name)
                 iterate_collection(new_collection,
@@ -1232,34 +1223,16 @@ class DistributeInstancesOperator(bpy.types.Operator):
         scene = context.scene
         # Check if music data is available
         placement_offsets = {}
-        if  'music_data' in scene and 'tracks' in scene['music_data']:
-            tracks = list(scene['music_data']['tracks'])
-            for index, track in enumerate(tracks):
+        
+        if has_music_track(scene, track_index=0):
+            for index in range(get_music_track_count(scene)):
                 prop_name = f"track-section-{index}"
                 track_section = get_track_section(scene, index)
                 if track_section != None and track_section.enabled:
                     # Dropdown for plane selection
                     if track_section.enabled:
                         mesh_name = track_section.track_plane
-                        if mesh_name != None and mesh_name in bpy.data.objects:
-                            plan_mesh = bpy.data.objects[mesh_name]
-                            # Checkboxes for MIDI notes
-                            instances = [obj for obj in bpy.data.objects if obj.instance_type == 'COLLECTION']  # List of collection instances
-                            for note in track['notes']:
-                                prop_name = f"cb_{note}_{index}"
-                                track_note = get_track_note(scene, index, note)
-                                if  track_note.enabled or track_note == None:
-                                    properties = {"note": note, "track": index}  # Dictionary of properties to match
-                                    matching_instance = find_instance_with_properties(instances, properties)
-                                    if matching_instance != None:
-                                        maxx = track_section.max_x
-                                        maxy = track_section.max_y
-                                        minx = track_section.min_x
-                                        miny = track_section.min_y
-                                        distribute_collection_on_plane(matching_instance, plan_mesh, minx, maxx, miny, maxy)
-                                else:
-                                    print(f"cant find {prop_name}")
-                        elif mesh_name != None and mesh_name in bpy.data.collections:
+                        if mesh_name != None and mesh_name in bpy.data.collections:
                             collection = bpy.data.collections[mesh_name]
                             print("collection ")
                             print(collection)
@@ -1276,11 +1249,13 @@ class DistributeInstancesOperator(bpy.types.Operator):
                             else:
                                 placement_offsets[collection.name] = 0
                                 c = 0
+                            notes = get_music_data_track_notes(scene, index)
                             instances = [obj for obj in bpy.data.objects if obj.instance_type == 'COLLECTION']  # List of collection instances
-                            for note in track['notes']:
+                            for note in notes:
                                 prop_name = f"cb_{note}_{index}"
+                                print(prop_name)
                                 track_note = get_track_note(scene, index, note)
-                                if  track_note.enabled or track_note == None:
+                                if  track_note == None or track_note.enabled:
                                     properties = { "note": note, "track": index }  # Dictionary of properties to match
                                     mesh_dat = all_mesh_data[c % len(all_mesh_data)]
                                     obj_dat = all_obj_data[c % len(all_obj_data)]
@@ -1328,18 +1303,12 @@ class ProcessJSONFileOperator(bpy.types.Operator):
         track_count , unique_notes_per_track, unique_notes_for_track = analyze_tracks(json_data=json.loads(raw_json_data))
         print("Number of tracks:", track_count)
         print("Unique MIDI notes per track:", unique_notes_per_track)
-        music_data = {
-            'tracks': []
-        }
 
+        
         for i in range(track_count):
             track_name = get_track_name(json.loads(raw_json_data), i)
-            temp = {
-                'name': track_name + f" {i+1}",
-                'notes': unique_notes_for_track[i]
-            }
-            music_data["tracks"].append(temp)
-        context.scene["music_data"] = music_data
+            add_music_data(scene, i, track_name + f" {i+1}", unique_notes_for_track[i])
+
         collection_name = context.scene.my_collection_enum
         instances = [obj for obj in bpy.data.objects if obj.instance_type == 'COLLECTION']  # List of collection instances
         for i in range(track_count):
@@ -1378,6 +1347,19 @@ class TrackNoteItem(bpy.types.PropertyGroup):
     track_id: bpy.props.IntProperty(name="Track")
     note_id: bpy.props.IntProperty(name="Note")
     enabled: bpy.props.BoolProperty(name="Enabled")
+
+class NoteData(bpy.types.PropertyGroup):
+    # Define properties for individual notes here
+    value: bpy.props.IntProperty(name="Value")
+
+class MusicTrackData(bpy.types.PropertyGroup):
+    # 'name': track_name + f" {i+1}",
+    # 'notes': unique_notes_for_track[i]
+    name: bpy.props.StringProperty(name="Name")
+    notes: bpy.props.CollectionProperty(type=NoteData)
+
+class MusicData(bpy.types.PropertyGroup):
+    tracks: bpy.props.CollectionProperty(type=MusicTrackData)
 
 class TrackSectionItem(bpy.types.PropertyGroup):
     track_id: bpy.props.IntProperty()
@@ -1426,6 +1408,38 @@ def get_track_note(scene, track_index, note_id):
             return track_item
     return None
 
+def get_music_data_track_notes(scene, track_index):
+    track_data = get_music_track_data(scene, track_index=track_index)
+    notes = []
+    for i in range(len(track_data.notes)):
+        notes.append(track_data.notes[i].value)
+    return notes
+
+def add_music_data(scene, track_index, name, notes):
+    music_data = scene.music_data_props.music_data
+    if has_music_track(scene, track_index=track_index):
+        track = get_music_track_data(scene, track_index=track_index)
+    else:
+        track = music_data.tracks.add()
+        track.name = name
+    print(notes)
+    for i in range(len(notes)):
+        note = track.notes.add()
+        note.value = notes[i]
+
+def get_music_track_count(scene):
+    music_data = scene.music_data_props.music_data
+    return len(music_data.tracks)
+
+def get_music_track_data(scene, track_index):
+    music_data = scene.music_data_props.music_data
+    if len(music_data.tracks) > track_index:
+        return music_data.tracks[track_index]
+    return None
+
+def has_music_track(scene, track_index):
+    return get_music_track_data(scene, track_index=track_index) != None
+
 def add_track_to_properties(scene, track_index, note_id):
     note = get_track_note(scene, track_index=track_index, note_id=note_id)
     if note == None:
@@ -1453,6 +1467,7 @@ def add_track_section_to_properties(scene, track_index, min_x, min_y, max_x, max
 class MusicDataProperties(bpy.types.PropertyGroup):
     # This class will hold all the dynamic properties
     track_notes: bpy.props.CollectionProperty(type=TrackNoteItem)
+    music_data: bpy.props.PointerProperty(type=MusicData)
     track_sections: bpy.props.CollectionProperty(type=TrackSectionItem)
 
 class PixelSymphonyPanel(bpy.types.Panel):
@@ -1473,13 +1488,13 @@ class PixelSymphonyPanel(bpy.types.Panel):
         scene = context.scene
         
         # Check if music data is available
-        if 'music_data' in scene and 'tracks' in scene['music_data']:
-            tracks = list(scene['music_data']['tracks'])
-            for index, track in enumerate(tracks):
+        if has_music_track(scene, track_index=0):
+            for index in range(get_music_track_count(scene)):
+                track = get_music_track_data(scene, index)
                 track_section = get_track_section(scene, index)
                 if track_section != None:
                     box = layout.box()
-                    box.prop(track_section, 'enabled', text=track['name'])
+                    box.prop(track_section, 'enabled', text=track.name)
                     box.prop(track_section, 'show', text="Show")
                     box.prop(track_section, 'pin_to_face', text="Pin to face")
                     box.prop_search(track_section, 'track_plane', bpy.data, "collections")
@@ -1495,7 +1510,8 @@ class PixelSymphonyPanel(bpy.types.Panel):
                             if hasattr(track_section, prop_name_boundary):
                                 box.prop(track_section, prop_name_boundary)
                         if track_section.show:
-                            for note in track['notes']:
+                            notes = get_music_data_track_notes(scene, track_index=index)
+                            for note in notes:
                                 track_note = get_track_note(scene, index, note)
                                 prop_name = f"cb_{note}_{index}"
                                 if track_note != None:
@@ -1531,6 +1547,9 @@ def register():
     bpy.utils.register_class(CalculateRequiredFramesOperator)
     bpy.utils.register_class(TrackSectionItem)
     bpy.utils.register_class(TrackNoteItem)
+    bpy.utils.register_class(NoteData)
+    bpy.utils.register_class(MusicTrackData)
+    bpy.utils.register_class(MusicData)
     bpy.utils.register_class(MusicDataProperties)
     bpy.utils.register_class(PixelSymphonyPanel)
     bpy.types.Scene.music_data_props = bpy.props.PointerProperty(type=MusicDataProperties)
@@ -1555,6 +1574,9 @@ def unregister():
     del bpy.types.Scene.music_data_props
     bpy.utils.unregister_class(MusicDataProperties)
     bpy.utils.unregister_class(TrackNoteItem)
+    bpy.utils.unregister_class(NoteData)
+    bpy.utils.unregister_class(MusicTrackData)
+    bpy.utils.unregister_class(MusicData)
     bpy.utils.unregister_class(TrackSectionItem)
     del bpy.types.Scene.make_single
     del bpy.types.Scene.my_collection_enum
