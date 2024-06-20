@@ -4,6 +4,7 @@ from bpy.types import NodeTree, Node, NodeSocket, NodeSocketFloat, Operator
 from bpy.props import *
 import inspect
 import json
+from bpy_extras.object_utils import world_to_camera_view
 import mathutils
 import nodeitems_utils
 from nodeitems_utils import NodeCategory, NodeItem
@@ -120,35 +121,37 @@ def project_3d_point_to_image(camera, point):
     resolution_x_in_px = scale * resolution_x_in_px
     resolution_y_in_px = scale * resolution_y_in_px
 
-    pixel_aspect_ratio = render.pixel_aspect_x / render.pixel_aspect_y
+    # pixel_aspect_ratio = render.pixel_aspect_x / render.pixel_aspect_y
 
-    # Focal length in pixels
-    f_x = (f_in_mm / sensor_width_in_mm) * resolution_x_in_px
-    f_y = (f_in_mm / sensor_height_in_mm) * resolution_y_in_px / pixel_aspect_ratio
+    # # Focal length in pixels
+    # f_x = (f_in_mm / sensor_width_in_mm) * resolution_x_in_px
+    # f_y = (f_in_mm / sensor_height_in_mm) * resolution_y_in_px / pixel_aspect_ratio
 
-    # Principal point in pixels
-    c_x = resolution_x_in_px / 2
-    c_y = resolution_y_in_px / 2
+    # # Principal point in pixels
+    # c_x = resolution_x_in_px / 2
+    # c_y = resolution_y_in_px / 2
 
-    # Camera intrinsic matrix
-    K = mathutils.Matrix(((f_x, 0, c_x, 0),
-                          (0, f_y, c_y, 0),
-                          (0, 0, 1, 0),
-                          (0, 0, 0, 1)))
+    # # Camera intrinsic matrix
+    # K = mathutils.Matrix(((f_x, 0, c_x, 0),
+    #                       (0, f_y, c_y, 0),
+    #                       (0, 0, 1, 0),
+    #                       (0, 0, 0, 1)))
 
-    # Convert the point from world coordinates to camera coordinates
-    point_world = mathutils.Vector(point)
-    point_camera = camera.matrix_world.inverted() @ point_world
+    # # Convert the point from world coordinates to camera coordinates
+    # point_world = mathutils.Vector(point)
+    # point_camera = camera.matrix_world.inverted() @ point_world
 
-    # Homogeneous coordinates
-    point_camera_homogeneous = mathutils.Vector((point_camera.x, point_camera.y, point_camera.z, 1))
+    # # Homogeneous coordinates
+    # point_camera_homogeneous = mathutils.Vector((point_camera.x, point_camera.y, point_camera.z, 1))
 
-    # Project the point onto the image plane using the intrinsic matrix
-    point_image_homogeneous = K @ point_camera_homogeneous
+    # # Project the point onto the image plane using the intrinsic matrix
+    # point_image_homogeneous = K @ point_camera_homogeneous
+    coords2d = world_to_camera_view(scene, camera, point)
+    pixel_x = int(coords2d.x * resolution_x_in_px)
+    pixel_y = int((1 - coords2d.y) * resolution_y_in_px)  # Flip y-axis
 
     # Normalize homogeneous coordinates
-    point_image = mathutils.Vector((point_image_homogeneous.x / point_image_homogeneous.z,
-                                    point_image_homogeneous.y / point_image_homogeneous.z, 0))
+    point_image = mathutils.Vector((pixel_x, pixel_y, 0))
 
     return point_image
 
@@ -177,10 +180,10 @@ class PixelSymphonyCharacterNode(Node, PixelBaseNode):
             height_object = bpy.data.objects.get(height_object_id)
 
             if camera and obj and height_object:
-                location = obj.location
-                projected_point = project_3d_point_to_image(camera, obj.location)
-                height_projected_point = project_3d_point_to_image(camera, height_object.location)
-                distance = (camera.location - location).length
+                location = obj.matrix_world.translation
+                projected_point = project_3d_point_to_image(camera, obj.matrix_world.translation)
+                height_projected_point = project_3d_point_to_image(camera, height_object.matrix_world.translation)
+                distance = (camera.matrix_world.translation - location).length
 
                 character = bpy.context.scene.character_property_groups.add()
                 character.x = location.x
@@ -253,16 +256,6 @@ class PixelSymphonyProjectionNode(Node, PixelBaseNode):
         self.update()
 
 
-# Function to write location to a file as JSON
-def write_location_to_file(file_path, location):
-    data = {
-        "location": {
-            "x": location[0],
-            "y": location[1]
-        }
-    }
-    with open(file_path, 'w') as file:
-        json.dump(data, file, indent=4)
 
 # Custom property group to represent a location with multiple properties
 class CharacterPropertyGroup(bpy.types.PropertyGroup):
@@ -380,6 +373,7 @@ class PixelSymphonyWriteToFileNode(Node, PixelBaseNode):
         if self.inputs['Character Data'].is_linked:
             for link in self.inputs['Character Data'].links:
                 from_socket = link.from_socket
+                from_socket.node.update()
                 loc_vector = from_socket.get_value()
                 locations.append(loc_vector)
         return locations
